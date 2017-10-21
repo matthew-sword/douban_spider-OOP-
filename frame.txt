@@ -1,0 +1,101 @@
+class
+     GetHtml
+            func
+                get_html($url) //网页下载器
+
+     Top250
+
+           func
+               scheduler //调度器 && url管理器 (分两步10 / 250)
+               get_list($conn) //网页解析器
+               get_post($conn) //网页解析器
+               get_summary($conn) //网页解析器
+               get_comment($conn) //网页解析器
+
+
+
+//代码保留
+ //爬取top250列表页，获取排名 名称 详情页url(写入数据库)，并把名称写入top_list.txt
+    function get_list($conn)
+    {
+        //创建top250文件
+        $this->list = fopen("top250_list.txt", "w+");
+        echo "file opened...\n";
+
+        //创建top250数据表
+        $this->m_table = $conn->prepare("CREATE TABLE IF NOT EXISTS top250(
+                                        rank INT PRIMARY KEY AUTO_INCREMENT,
+                                        link VARCHAR(100))    DEFAULT CHARSET=utf8 ");
+
+        if ($this->m_table->execute())
+            echo "table cteated...\n";
+
+        //循环爬取网页
+        var
+        $i = 0;
+        while ($i < 10) {
+            //获取网页内容
+            $douban_dom_page = new GetHtml();
+            $web_page = $douban_dom_page->get_html($this->url);
+
+            $douban_dom = new simple_html_dom();   //创建simple_html_dom对象douban_dom
+            $douban_dom->load($web_page);
+
+            //提取电影名
+            $names = $douban_dom->find('span.title,span.other'); //爬取电影名
+            $name_reg = '/&nbsp;\/.*/'; //html中&nbsp表示空格
+
+            //提取详情链接
+            $addrs = $douban_dom->find('a');
+            $addr_reg = '/https:\/\/movie\.douban\.com\/subject.*/';
+
+            //循环输出top250名单
+            foreach ($names as $key => $value) {
+                if (!preg_match($name_reg, $value)) {
+                    echo "\n\n" . $this->rank . " ";
+                    fwrite($this->list, "\n\n" . "$this->rank");
+                    $this->rank++;
+                }
+
+                //过滤html标签
+                $value = strip_tags($value);
+                $clean = str_replace('&nbsp;', '', $value);
+
+                //输出&写入
+                echo $clean;
+                fwrite($this->list, $clean);
+            }
+
+            if ($this->tb_writed <= 250) {
+                //详情链接写入mysql
+                foreach ($addrs as $key => $value) {
+                    //匹配电影详情页的url && 去重
+                    if (preg_match($addr_reg, $value->href) &&
+                        !strstr($addrs[$key]->href, $addrs[$key + 1]->href)) {
+                        $add = $value->href;
+                        $m_table = $conn->prepare("INSERT INTO top250 (link) VALUES (:link)");
+                        $m_table->bindParam(':link', $add);
+                        $m_table->execute();
+                    }
+                }
+                $this->tb_writed++;
+
+            }
+
+            //随机暂停3-5秒
+            $time = rand(3, 5);
+            echo "\nsleeping($time s)...\n";
+            sleep($time);
+
+            //url生成
+            $i++;
+            $this->url = 'https://movie.douban.com/top250?start=' . (string)($i * 25) . '&filter=';
+
+            //清空dom内存
+            $douban_dom->clear();
+        }
+
+        //关闭文件
+        fclose($this->list);
+
+    }
